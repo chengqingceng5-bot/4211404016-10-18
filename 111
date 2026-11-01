@@ -1,0 +1,100 @@
+/**
+ * 小風攝影工作室｜詢問表單後端
+ * 功能：1) 把每筆詢問寫進 Google 試算表  2) 寄通知信到指定信箱
+ *
+ * 使用方式見專案根目錄 README.md 的「表單串接 Google 試算表與 Email」。
+ */
+
+// ====== 只需要改這裡 ======
+var NOTIFY_EMAILS = 'chengqingceng5@gmail.com';   // 通知信收件人，多個用逗號分隔
+var SHEET_NAME    = '詢問單';                    // 工作表名稱（不存在會自動建立）
+var SUBJECT_PREFIX = '【新詢問】';                // 通知信主旨開頭
+// ==========================
+
+var HEADERS = ['時間', '姓名', '聯絡方式', '拍攝類型', '預計日期', '拍攝地點', '預算', '留言', '來源頁面'];
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var p = (e && e.parameter) || {};
+
+    // 機器人陷阱欄位：有值就靜默忽略
+    if (p.website) return json_({ ok: true });
+
+    var name    = clean_(p['姓名'], 100);
+    var contact = clean_(p['聯絡方式'], 200);
+    var type    = clean_(p['拍攝類型'], 50);
+    if (!name || !contact || !type) return json_({ ok: false, error: 'missing required fields' });
+
+    var row = [
+      new Date(),
+      name,
+      contact,
+      type,
+      clean_(p['預計日期'], 20),
+      clean_(p['拍攝地點'], 200),
+      clean_(p['預算'], 50),
+      clean_(p['留言'], 2000),
+      clean_(p['頁面'], 300)
+    ];
+
+    var sheet = getSheet_();
+    sheet.appendRow(row);
+
+    sendNotification_(row, sheet);
+    return json_({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return json_({ ok: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
+
+function doGet() {
+  return ContentService.createTextOutput('Inquiry endpoint is running.');
+}
+
+function getSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();   // 需從試算表的「擴充功能 → Apps Script」開啟
+  var sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function sendNotification_(row, sheet) {
+  var tz = Session.getScriptTimeZone();
+  var when = Utilities.formatDate(row[0], tz, 'yyyy-MM-dd HH:mm');
+  var labels = HEADERS.slice(1);
+  var lines = labels.map(function (label, i) { return label + '：' + (row[i + 1] || '（未填）'); });
+  var body = '你收到一筆新的拍攝詢問（' + when + '）\n\n' + lines.join('\n') +
+             '\n\n試算表：' + SpreadsheetApp.getActiveSpreadsheet().getUrl();
+
+  var options = { name: '小風攝影工作室 網站表單' };
+  // 如果對方留的是 Email，按「回覆」可直接回給客人
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row[2])) options.replyTo = row[2];
+
+  MailApp.sendEmail(NOTIFY_EMAILS, SUBJECT_PREFIX + row[3] + '｜' + row[1], body, options);
+}
+
+// 去除控制字元、限制長度，並避免以 = + - @ 開頭被試算表當成公式執行
+function clean_(v, max) {
+  var s = String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim();
+  if (s.length > max) s = s.slice(0, max);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return s;
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 第一次部署前，可在編輯器手動執行這個函式來授權並測試寫入與寄信
+function testSubmit() {
+  doPost({ parameter: { '姓名': '測試', '聯絡方式': 'test@example.com', '拍攝類型': '婚紗', '留言': '這是一筆測試資料' } });
+}
