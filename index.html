@@ -148,6 +148,10 @@
     textarea { min-height: 120px; resize: vertical; }
     .form-actions { margin-top: 22px; text-align: center; }
     .form-note { margin-top: 12px; font-size: .85rem; color: var(--muted); text-align: center; }
+    .form-note.ok { color: #2f6b3f; font-weight: 600; }
+    .form-note.err { color: #b3261e; font-weight: 600; }
+    .btn[disabled] { opacity: .6; cursor: wait; }
+    .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
     /* Footer */
     .site-footer { background: #2b2623; color: #d9cfc4; padding: 56px 0 28px; }
@@ -403,7 +407,12 @@
           <p>填寫以下資訊，我會在 1–2 個工作天內回覆你。</p>
         </div>
         <div class="form-wrap">
-          <form id="inquiry-form" action="mailto:hello@example.com" method="post" enctype="text/plain">
+          <form id="inquiry-form" novalidate>
+            <!-- 防機器人欄位：真人看不到，機器人會填 -->
+            <div class="hp" aria-hidden="true">
+              <label for="website">請勿填寫此欄</label>
+              <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+            </div>
             <div class="form-grid">
               <div class="field">
                 <label for="name">姓名 <span class="req">*</span></label>
@@ -448,9 +457,9 @@
               </div>
             </div>
             <div class="form-actions">
-              <button class="btn btn-primary" type="submit">送出詢問</button>
+              <button class="btn btn-primary" type="submit" id="submit-btn">送出詢問</button>
             </div>
-            <p class="form-note" id="form-note">送出後會開啟你的信箱，內容已自動帶入。</p>
+            <p class="form-note" id="form-note" role="status" aria-live="polite">送出後我會在 1–2 個工作天內與你聯絡。</p>
           </form>
         </div>
       </div>
@@ -500,17 +509,51 @@
     });
     lb.addEventListener('click', function () { lb.close(); });
 
-    // 表單：用 mailto 組出完整內容（靜態網站無後端時的做法）
-    document.getElementById('inquiry-form').addEventListener('submit', function (e) {
+    // 表單：送到 Google Apps Script（寫入 Google 試算表 + 寄通知信）
+    // 部署 Apps Script 後，把「網頁應用程式網址」貼到下面（以 /exec 結尾）
+    var FORM_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+    var form = document.getElementById('inquiry-form');
+    var note = document.getElementById('form-note');
+    var btn = document.getElementById('submit-btn');
+    var FIELDS = ['姓名', '聯絡方式', '拍攝類型', '預計日期', '拍攝地點', '預算', '留言'];
+
+    function setNote(text, cls) {
+      note.textContent = text;
+      note.className = 'form-note' + (cls ? ' ' + cls : '');
+    }
+
+    form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var f = e.target;
-      var lines = ['姓名', '聯絡方式', '拍攝類型', '預計日期', '拍攝地點', '預算', '留言'].map(function (k) {
-        return k + '：' + (f.elements[k] ? f.elements[k].value : '');
-      });
-      var subject = encodeURIComponent('【檔期詢問】' + f.elements['拍攝類型'].value + '｜' + f.elements['姓名'].value);
-      var body = encodeURIComponent(lines.join('\n'));
-      window.location.href = 'mailto:hello@example.com?subject=' + subject + '&body=' + body;
-      document.getElementById('form-note').textContent = '已開啟你的郵件程式，請按寄出即可完成詢問。';
+      if (!form.reportValidity()) return;
+
+      if (FORM_ENDPOINT.indexOf('https://script.google.com/') !== 0) {
+        setNote('表單尚未連接後端，請先完成 Apps Script 設定（見 README）。', 'err');
+        return;
+      }
+
+      var data = new URLSearchParams();
+      FIELDS.forEach(function (k) { data.append(k, form.elements[k].value.trim()); });
+      data.append('website', form.elements['website'].value); // honeypot
+      data.append('頁面', location.href);
+
+      btn.disabled = true;
+      btn.textContent = '送出中…';
+      setNote('正在送出，請稍候…');
+
+      // Apps Script 不回傳 CORS 標頭，使用 no-cors：請求會送出，但讀不到回應內容
+      fetch(FORM_ENDPOINT, { method: 'POST', mode: 'no-cors', body: data })
+        .then(function () {
+          form.reset();
+          setNote('已收到你的詢問！我會在 1–2 個工作天內與你聯絡。', 'ok');
+        })
+        .catch(function () {
+          setNote('送出失敗，請檢查網路後再試，或直接寄信到 hello@example.com。', 'err');
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = '送出詢問';
+        });
     });
   </script>
 </body>
