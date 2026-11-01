@@ -15,6 +15,15 @@
   <meta property="og:image" content="images/hero.jpg">
   <meta name="theme-color" content="#f7f3ee">
 
+  <!-- ★★★ 唯一需要你修改的設定 ★★★
+       把 Apps Script「網頁應用程式網址」（https://script.google.com/macros/s/xxxx/exec）貼在 formEndpoint 的引號裡 -->
+  <script>
+    window.SITE_CONFIG = {
+      formEndpoint: 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE',
+      contactEmail: 'hello@example.com'
+    };
+  </script>
+
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -510,8 +519,8 @@
     lb.addEventListener('click', function () { lb.close(); });
 
     // 表單：送到 Google Apps Script（寫入 Google 試算表 + 寄通知信）
-    // 部署 Apps Script 後，把「網頁應用程式網址」貼到下面（以 /exec 結尾）
-    var FORM_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+    // 網址請改頁面最上方 <head> 內的 SITE_CONFIG.formEndpoint
+    var FORM_ENDPOINT = window.SITE_CONFIG.formEndpoint;
 
     var form = document.getElementById('inquiry-form');
     var note = document.getElementById('form-note');
@@ -528,7 +537,7 @@
       if (!form.reportValidity()) return;
 
       if (FORM_ENDPOINT.indexOf('https://script.google.com/') !== 0) {
-        setNote('表單尚未連接後端，請先完成 Apps Script 設定（見 README）。', 'err');
+        setNote('表單網址尚未設定：請把 Apps Script 網頁應用程式網址貼到 index.html 最上方的 formEndpoint。', 'err');
         return;
       }
 
@@ -548,7 +557,7 @@
           setNote('已收到你的詢問！我會在 1–2 個工作天內與你聯絡。', 'ok');
         })
         .catch(function () {
-          setNote('送出失敗，請檢查網路後再試，或直接寄信到 hello@example.com。', 'err');
+          setNote('送出失敗，請檢查網路後再試，或直接寄信到 ' + window.SITE_CONFIG.contactEmail + '。', 'err');
         })
         .finally(function () {
           btn.disabled = false;
